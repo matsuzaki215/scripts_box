@@ -19,6 +19,8 @@ class CheckRequirement(object):
             'module': re.compile(REGEX_MODULE)
         }
 
+        self.dependencies = {}
+
     def _get_requirements(self):
         requirements = glob.glob(os.path.join(self.requirements_dir, '*.txt'))
         return requirements
@@ -39,6 +41,11 @@ class CheckRequirement(object):
                 result = self.patterns['module'].match(line)
                 if result:
                     self.tree[filename]['modules'].append(result.group(1))
+
+                if self.tree[filename]['-r'] is not None:
+                    if self.tree[filename]['-r'] not in self.dependencies:
+                        self.dependencies[self.tree[filename]['-r']] = set()
+                    self.dependencies[self.tree[filename]['-r']].add(filename)
 
     def parse(self, files):
         self.tree = dict()
@@ -84,6 +91,19 @@ class CheckRequirement(object):
     def show_error(self):
         error_list = self.check()
 
+        values = []
+        for v in self.dependencies.values():
+            values.extend(v)
+
+        root_file = ''
+        for key in self.dependencies.keys():
+            if key not in values:
+                root_file = key
+                break
+
+        self._show_error_recursive(error_list, root_file)
+
+        """
         for filename, errors in error_list.items():
             if len(errors) == 0:
                 print(f'{filename} is OK')
@@ -91,6 +111,24 @@ class CheckRequirement(object):
 
             for err in errors:
                 print(f'{filename}: {err}')
+        """
+
+    def _show_error_recursive(self, error_list, filename, depth=0):
+        errors = error_list[filename]
+        indent = '    '*(depth-1)
+        prefix = '' if depth == 0 else f'  {indent}└ '
+
+        if len(errors) == 0:
+            print(f'{prefix}{filename}')
+
+        for err in errors:
+            print(f'{prefix}{filename} <-- {err}')
+
+        if filename not in self.dependencies:
+            return
+
+        for fn in self.dependencies[filename]:
+            self._show_error_recursive(error_list, filename=fn, depth=depth+1)
 
 
 @click.command(context_settings={"ignore_unknown_options": True})
